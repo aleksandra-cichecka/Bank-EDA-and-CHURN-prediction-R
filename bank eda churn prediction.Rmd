@@ -1,0 +1,569 @@
+---
+title: "Bank EDA and CHURN prediction"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+knitr::opts_chunk$set(fig.pos = "H", out.extra = "", fig.align = "center")
+
+library(randomForest)
+library(knitr)
+```
+
+# Introduction
+
+This report presents an analysis of bank customer churn data, obtained from the Customer-Churn-Record dataset available on Kaggle (source: <https://www.kaggle.com/datasets/radheshyamkollipara/bank-customer-churn?resource=download>). The dataset contains information about 10,000 bank customers including their demographic characteristics, account details, transaction history and churn status. The primary objectives of this analysis are Exploratory Data Analysis (EDA) and Churn Prediction.
+
+The use of EDA will help in understanding the structure and distribution of the data, identify patterns and the reasons why customers churn. Through the use of Random Forest we can estimate the probability of churn for retained customers and prevent it from occurring. 
+
+This study aims to provide the bank with a practical tool for identifying at-risk customers before they decide to leave and the reasoning behind these predictions.
+
+# Data Preparation and Cleaning 
+
+```{r}
+data <- read.csv(file="Customer-Churn-Records.csv", stringsAsFactors = TRUE)
+
+#data.frame(typ=sapply(data, class))
+
+#anyNA(data)
+```
+
+```{r}
+head(data)
+```
+
+The dataset used in this analysis is the Bank Customer Churn Dataset available on Kaggle. It contains information about bank customers, including their demographics, account details, transaction history and churn status. The dataset was checked for missing observations and none were found. Categorical variables were properly converted. The RowNumber, CustomerId and Surname columns were removed from the analysis as they serve as unique indetifiers and would not contribute meaningfully to predictive modeling.
+
+```{r}
+data$CustomerId <- NULL
+data$RowNumber <- NULL
+data$Surname <- NULL
+
+```
+
+# Descriptive Analysis
+
+```{r}
+# 1 - Yes, they left, 0 - No, they are still a member
+
+ChurnY <- data[data$Exited == "1", ] 
+ChurnN <- data[data$Exited == "0", ]
+```
+
+```{r}
+
+ChurnYes <- sum(data$Exited == "1")
+ChurnNo <- sum(data$Exited == "0")
+
+ChurnYesProcent <- round(ChurnYes / nrow(data) * 100, 1)
+ChurnNoProcent <- round(ChurnNo / nrow(data) * 100, 1)
+
+```
+
+```{r}
+# Exited
+
+barplot(table(data$Exited),
+        main  = "Churn Distribution",
+        names.arg = c("Retained", "Churned"),
+        ylab  = "Number of Clients",
+        ylim = c(0, 10000),
+        border = "white",
+        col   = c("pink", "pink4"))
+```
+The Exited column serve as an information whether or not the customer left the bank. According to data `r ChurnNoProcent`% of the clients decided to churn and `r ChurnYesProcent`% retained. Most of the clients are still loyal to the bank. 
+
+```{r}
+# Credit Score histogram
+
+par(mfrow = c(1, 2))
+
+hist(ChurnY$CreditScore,
+     main   = "Credit Score of Churned Clients",
+     xlab   = "Credit Score",
+     xlim = c(150, 1000),
+     ylab   = "Number of Clients",
+     ylim = c(0, 200),
+     col    = "pink4",
+     border = "white",
+     breaks = 20)
+
+hist(ChurnN$CreditScore,
+     main   = "Credit Score of Retained Clients",
+     xlab   = "Credit Score",
+     xlim = c(150, 1000),
+     ylab   = "Number of Clients",
+     ylim = c(0, 700),
+     col    = "pink",
+     border = "white",
+     breaks = 20)
+
+```
+The CreditScore column keeps an information about clients credit score. There is no noticeable difference between the two groups. 
+
+```{r}
+# Geography barplot
+
+par(mfrow = c(1, 2))
+
+barplot(table(ChurnY$Geography),
+        main = "Location of Churned Clients",
+        ylab = "Number of Clients",
+        ylim = c(0, 1000),
+        xlab   = "Country",
+        border = "white",
+        col = c("pink", "pink2", "pink4")
+)
+
+barplot(table(ChurnN$Geography),
+        main = "Location of Retained Clients",
+        ylab = "Number of Clients",
+        ylim = c(0, 5000),
+        xlab   = "Country",
+        border = "white",
+        col = c("pink", "pink2", "pink4")
+        
+)
+
+```
+The majority of out churned clients came from Germany. An equal number of clients also churned in France, however since France represents our largest overall client base, this does not translate into as high a churn rate. Clients from Germany are most likely to churn
+
+```{r}
+# Gender pie chart
+par(mfrow = c(1, 2))
+
+pie(table(ChurnY$Gender),
+    main   = "Gender of Churned Clients",
+    col    = c("pink3", "pink"),
+    border = "black",
+    radius = 0.9,
+    labels = NA)
+
+legend("topright", legend = c("Female", "Male"),
+       fill = c("pink3", "pink"), border = "black", bty = "n", cex = 1)
+
+pie(table(ChurnN$Gender),
+    main   = "Gender of Retained Clients",
+    col    = c("pink3", "pink"),
+    border = "black",
+    radius = 0.9,
+    labels = NA)
+
+legend("topright", legend = c("Female", "Male"),
+       fill = c("pink3", "pink"), border = "black", bty = "n", cex = 1)
+```
+When analyzing two groups separately we observe that gender could be a factor responsible for customers churn. Female are more tend do leave the bank. 
+
+```{r}
+# Age histogram 
+
+par(mfrow = c(1, 2))
+
+hist(ChurnY$Age,
+     main   = "Age of Churned Clients",
+     xlab   = "Age",
+     xlim = c(0, 100),
+     ylab   = "Number of Clients",
+     ylim = c(0, 500),
+     col    = "pink4",
+     border = "white",
+     breaks = 20)
+
+hist(ChurnN$Age,
+     main   = "Age of Retained Clients",
+     xlab   = "Age",
+     xlim = c(0, 100),
+     ylab   = "Number of Clients",
+     ylim = c(0, 2500),
+     col    = "pink",
+     border = "white",
+     breaks = 20)
+
+min_age <- min(data$Age)
+avg_ageCH <- round(mean(ChurnY$Age),0)
+avg_ageR <- round(mean(ChurnN$Age),0)
+
+
+
+```
+The bank serves customers across a wide age range from 18 to 80 years old. The average age of churned clients is `r avg_ageCH`, whereas the average age of retained clients is `r avg_ageR`. Churned clients tend to be older than retained clients, suggesting that the likelihood of churn increases with age.
+
+```{r}
+# Tenure histogram
+
+par(mfrow = c(1, 2))
+
+hist(ChurnY$Tenure,
+     main   = "Tenure of Churned Clients",
+     xlab   = "Years",
+     xlim = c(0, 10),
+     ylab   = "Number of Clients",
+     ylim = c(0, 400),
+     col    = "pink4",
+     border = "white",
+     breaks = 10)
+
+hist(ChurnN$Tenure,
+     main   = "Tenure of Retained Clients",
+     xlab   = "Years",
+     xlim = c(0, 10),
+     ylab   = "Number of Clients",
+     ylim = c(0, 1200),
+     col    = "pink",
+     border = "white",
+     breaks = 10)
+```
+The Tenure column keeps an information on how many years a client has been a member of the bank. This factor has no impact on customer churn. 
+
+```{r}
+# Balance histogram
+
+par(mfrow = c(1, 2))
+
+hist(ChurnY$Balance,
+     main   = "Balance of Churned Clients",
+     xlab   = "Balance",
+     xlim = c(0, 250000),
+     ylab   = "Number of Clients",
+     ylim = c(0, 1000),
+     col    = "pink4",
+     border = "white",
+     breaks = 30)
+
+hist(ChurnN$Balance,
+     main   = "Balance of Retained Clients",
+     xlab   = "Balance",
+     xlim = c(0, 250000),
+     ylab   = "Number of Clients",
+     ylim = c(0, 1000),
+     col    = "pink",
+     border = "white",
+     breaks = 30)
+
+
+avg_balanceCH <- round(mean(ChurnY$Balance),2)
+avg_balanceR <- round(mean(ChurnN$Balance),2)
+```
+Dataset contains an information on balance of each client. The average balance of churned clients is 91109.48 which is higher than the average balance of retained clients (72742.75). 
+
+```{r}
+# NumOfProducts pie chart
+
+par(mfrow = c(1, 2))
+
+pie(table(ChurnY$NumOfProducts),
+    main   = "Number of Products of 
+    Churned Clients",
+    col    = c("pink3", "pink2", "pink", "rosybrown1"),
+    border = "black",
+    radius = 0.9)
+
+
+pie(table(ChurnN$NumOfProducts),
+    main   = "Number of Products of
+    Retained Clients",
+    col    = c("pink3", "pink2", "pink", "rosybrown1"),
+    border = "black",
+    radius = 0.9)
+
+
+```
+Clients can have multiple products from  bank varying from 1 do 4. Most of churned clients had 1 product where as most of the retained clients have at least 2. None of the retained clients have 4 products and very little amount have 3. It could be a factor related to churn behavior. 
+
+```{r}
+# HasCrCard barplot
+
+par(mfrow = c(1, 2))
+
+barplot(table(ChurnY$HasCrCard),
+        main = "How many Churned Clients
+        own a Credit Card",
+        ylab = "Number of Clients",
+        names.arg = c("No", "Yes"),
+        ylim = c(0, 2000),
+        border = "white",
+        col = c("pink", "pink4")
+)
+
+barplot(table(ChurnN$HasCrCard),
+        main = "How many Retained Clients
+        own a Credit Card",
+        ylab = "Number of Clients",
+        names.arg = c("No", "Yes"),
+        ylim = c(0, 6000),
+        border = "white",
+        col = c("pink", "pink4")
+        
+)
+
+```
+Customers ownership of a credit card has does not influence churn since in both groups distribution is simillar.
+
+```{r}
+# IsActiveMember barplot
+
+par(mfrow = c(1, 2))
+
+barplot(table(ChurnY$IsActiveMember),
+        main = "How many Churned Clients
+        are an Active Member",
+        ylab = "Number of Clients",
+        names.arg = c("No", "Yes"),
+        ylim = c(0, 2000),
+        border = "white",
+        col = c("pink", "pink4")
+)
+
+barplot(table(ChurnN$IsActiveMember),
+        main = "How many Retained Clients
+        are an Active Member",
+        ylab = "Number of Clients",
+        names.arg = c("No", "Yes"),
+        ylim = c(0, 6000),
+        border = "white",
+        col = c("pink", "pink4")
+        
+)
+
+```
+Most of the churned clients were not an active member of the bank. Encouraging customers to become active members may reduce churn.
+
+```{r}
+# EstimatedSalary histogram
+
+par(mfrow = c(1, 2))
+
+hist(ChurnY$EstimatedSalary,
+     main   = "Estimated Salary of Churned Clients",
+     xlab   = "Salary",
+     xlim = c(0, 200000),
+     ylab   = "Number of Clients",
+     ylim = c(0, 200),
+     col    = "pink4",
+     border = "white",
+     breaks = 30)
+
+hist(ChurnN$EstimatedSalary,
+     main   = "Estimated Salary of Retained Clients",
+     xlab   = "Salary",
+     xlim = c(0, 200000),
+     ylab   = "Number of Clients",
+     ylim = c(0, 300),
+     col    = "pink",
+     border = "white",
+     breaks = 30)
+```
+Comparing two plots, estimared salary does not affect churn behavior. 
+
+```{r}
+# Complaint barplot
+
+par(mfrow = c(1, 2))
+
+complaint_table <- rbind(
+  Churned = table(ChurnY$Complain),
+  Retained = table(ChurnN$Complain)
+)
+
+kable(complaint_table, 
+      caption = "Complaints by Churn Status",
+      col.names = c("No Complaint", "Complaint"))
+
+```
+When analyzing two groups separately we observe that majority of the churned clients has previously filed a complaint. This factor has a strong impact on customer churn, suggesting that unresolved issues or unmet expectations may be driving customers to leave.
+
+
+```{r}
+# Satisfaction.Score pie chart
+
+par(mfrow = c(1, 2))
+
+pie(table(ChurnY$Satisfaction.Score),
+    main   = "Satisfaction Score of 
+    Churned Clients",
+    col    = c("pink3", "pink2", "pink", "rosybrown1", "rosybrown3"),
+    border = "black",
+    radius = 0.9)
+
+
+pie(table(ChurnN$Satisfaction.Score),
+    main   = "Satisfaction Score of
+    Retained Clients",
+    col    = c("pink3", "pink2", "pink", "rosybrown1", "rosybrown3"),
+    border = "black",
+    radius = 0.9)
+
+```
+There is no relationship between Satisfaction Score and churn. 
+
+```{r}
+# Card.Type pie chart
+
+par(mfrow = c(1, 2))
+
+pie(table(ChurnY$Card.Type),
+    main   = "Card Type of 
+    Churned Clients",
+    col    = c("pink3", "pink2", "pink", "rosybrown1"),
+    border = "black",
+    radius = 0.9)
+
+
+pie(table(ChurnN$Card.Type),
+    main   = "Card Type of
+    Retained Clients",
+    col    = c("pink3", "pink2", "pink", "rosybrown1"),
+    border = "black",
+    radius = 0.9)
+```
+Card type has no effect on customer churn behavior. 
+
+```{r}
+# Point.Earned histogram
+
+
+par(mfrow = c(1, 2))
+
+hist(ChurnY$Point.Earned,
+     main   = "Earned Points by Churned Clients",
+     xlab   = "Points",
+     xlim = c(0, 1200),
+     ylab   = "Number of Clients",
+     ylim = c(0, 200),
+     col    = "pink4",
+     border = "white",
+     breaks = 20)
+
+hist(ChurnN$Point.Earned,
+     main   = "Earned Points by Retained Clients",
+     xlab   = "Points",
+     xlim = c(0, 1200),
+     ylab   = "Number of Clients",
+     ylim = c(0, 600),
+     col    = "pink",
+     border = "white",
+     breaks = 20)
+```
+This variable does not influence churn.
+
+
+# Churn Prediction
+
+In this section, we employ a Random Forest classifier to develop a churn prediction model. This approach allows us to estimate the probability of churn for each customer and identify the most influential factor.
+
+The dataset was split into training (70%) and testing (30%) sets to allow for proper model evaluation and prevent overfitting.
+
+```{r}
+set.seed(195286)
+
+data$Exited <- as.factor(data$Exited)
+
+# data split 
+# 2/3 of data for learning set and 1/3 of data for training set 
+
+n <-nrow(data)
+
+learning.set.index <- sample(1:n, 2/3*n)
+
+learning.set <- data[learning.set.index,]
+test.set <- data[-learning.set.index,]
+
+n_learning <- nrow(learning.set)
+n_test <- nrow(test.set)
+
+ 
+
+```
+
+```{r}
+# random forest
+
+p <- ncol(learning.set) - 1
+
+rf <- randomForest(Exited ~ ., 
+                     data = learning.set, 
+                     ntree = 100, 
+                     mtry = sqrt(p),  # default for classification
+                     importance = TRUE)
+rf
+
+# predictions
+
+predictions_learning_rf <- predict(rf, newdata=learning.set, type="class")
+
+predictions_test_rf <- predict(rf, newdata=test.set, type="class")
+
+# confusion matrices
+
+confusion_learning_rf <- table(predictions_learning_rf, learning.set$Exited)
+confusion_test_rf <- table(predictions_test_rf, test.set$Exited)
+
+
+# accuracy and errors
+
+accuracy_learning_rf <- sum(diag(confusion_learning_rf))/n_learning
+error_learning_rf <- 1-accuracy_learning_rf
+
+accuracy_test_rf <- sum(diag(confusion_test_rf))/n_test
+error_test_rf <- 1-accuracy_test_rf
+
+# results table
+
+results_random_forest <- data.frame(
+  Dataset = c("Training", "Test"),
+  Accuracy = c(
+    round(accuracy_learning_rf * 100, 2),
+    round(accuracy_test_rf * 100, 2)
+  ),
+  Error = c(
+    round(error_learning_rf * 100, 2),
+    round(error_test_rf * 100, 2)
+  )
+)
+
+kable(results_random_forest, 
+      caption = "Random Forest Classification Summary",
+      col.names = c("Dataset", "Accuracy (%)", "Error (%)"),
+      align = "c",
+      digits = 2)
+```
+
+The model has been succesfully trained and is now capable of estimating the likelihood of churn for each customer.
+
+For the purposes of this analysis, customers with a churn probability exceeding 20% are classified as high-risk clients.
+
+```{r, results}
+retained_customers <- ChurnN
+
+retained_customers$churn_probability <- predict(rf, newdata=retained_customers, type="prob")[,"1"]
+
+freq=table(retained_customers$churn_probability)
+
+kable(t(freq),
+      col.names = paste0(round(as.numeric(names(freq))*100, 1), "%"),
+      caption = "Churn Probability Distribution"
+      
+      )
+
+varImpPlot(rf,
+           type = 1,
+           main = "Variable Importance for Churn Prediction"
+           
+           )
+
+
+
+```
+
+# Conclusion
+
+According to the Random Forest model applied to the bank's retained clients 6,631 clients have 0% probability of leaving the company. A churn probability of 20% or higher is classified as high risk. Only 10 clients exceed this threshold, while 1,323 clients fall within the 0-20% range. 
+
+It is worth focusing on the factors responsible for churn and implementing actions to counteract it. Priority should be given to high-risk clients, followed by maintaining these improvements so that the churn probability of remaining clients stays consistently low. 
+
+The strongest factor contributing to churn is Complain. Nearly all churned clients had previously filed a complaint, suggesting that unresolved issues or unmet expectations may be driving customers to leave. As a countermeasure we should place greater emphasis on addressing customer complaints and strengthening the support provided to them. Another significant driver of churn is the number of products held by clients. Most churned clients held only one product, however nearly all clients with three products churned, and all clients with four products churned. Retained clients hold a maximum of two products. A large number of products may be difficult to manage, so we should recommend a smaller product portfolio. Age is also an important factor, older clients churn more frequently. This may be linked to lack of adequate support for older customers. Additionally, attention should be paid to the situation with German clients, as the majority of them are leaving. Finally, clients should be encouraged to remain active members, as this reduces the likelihood of churn. 
