@@ -11,4 +11,4 @@ This project presents an analysis of bank customer churn data, obtained from the
 2. **Descriptive Analysis** - explored churn patterns across different columns, visualized every variable
 3. **Churn Prediction** - used Random Forest classifier to develop a churn prediction model, identified high-risk customers, pinpointed the variables most responsible for elevated churn
 
-A deployed version of this can be found [here](https://aleksandra-cichecka.github.io/Bank-EDA-and-CHURN-prediction/)
+A deployed version of this can be found [here](https://aleksandra-cichecka.github.io/Bank-EDA-and-CHURN-prediction-R/)
